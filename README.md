@@ -12,6 +12,10 @@ usual Indeed / Glassdoor / LinkedIn trio — government boards, regional boards,
 employer-page aggregators, remote-only boards, specialist IT recruiters, and the
 Big Six Canadian banks' own career sites.
 
+Indeed, LinkedIn and Glassdoor are **deliberately excluded** — you most likely
+already have daily job alerts running on those big three. This launchpad covers the
+channels beyond them, the ones that are easy to forget to check.
+
 ![On-site tab of the launchpad](docs/screenshot-onsite.png)
 
 ---
@@ -284,6 +288,11 @@ filtered to (e.g. *13 in Montréal, Québec*); if a bank doesn't expose a usable
 location facet, the chip says *matching* and the tooltip notes the count spans all
 locations.
 
+The Workday banks' **Open search** links are pre-filtered to your location too — on
+page load the app discovers each bank's location facet ids and folds them into the
+link, so clicking the card opens that bank's careers page already narrowed to your
+country/city (the link then reads, e.g., *Open search · Montréal, Québec*).
+
 **Why only the banks.** TD, BMO and CIBC run on Workday, which exposes a JSON jobs
 API that returns each posting's title and posted date — fast, reliable, no setup.
 The other career sites (RBC, Scotiabank, National Bank, and the general job boards)
@@ -332,6 +341,7 @@ launchpad page (HTML, CSS and JavaScript embedded as a template string).
 | `POST /api/locations/active` | Switch active location — body `{"id": "..."}` |
 | `POST /api/term` | Save the current search term — body `{"term": "..."}` |
 | `POST /api/scan` | Scan one bank for recent postings — body `{"site_id"}` |
+| `GET /api/bank-locations` | Location-filter URL params for the Workday bank links |
 
 ---
 
@@ -412,6 +422,11 @@ app has stopped — restart it with `python app.py` and reload the page.
 
 **A search link opens an empty or odd result page.** Job sites change their URL
 formats over time. Update the relevant `tpl` in the `SITES` dictionary in `app.py`.
+
+**An RBC link shows a "CloudFront 403 — Request blocked".** RBC's careers site sits
+behind a firewall that intermittently blocks requests. This is on RBC's end, not the
+launchpad — wait a minute and retry, switch networks, or open `jobs.rbc.com` directly
+and search from there.
 
 **My checkmarks disappeared.** Checkmarks are stored per-browser, per-device. They do
 not move between browsers or machines, and clearing your browser data clears them.

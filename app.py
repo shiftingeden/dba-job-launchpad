@@ -27,6 +27,7 @@ import signal
 import subprocess
 import time
 import unicodedata
+import urllib.parse
 import uuid
 
 import requests
@@ -170,7 +171,8 @@ SITES = {
     "bank-direct": [
         {
             "name": "RBC -- Royal Bank of Canada", "badge": "b-bank", "label": "Bank",
-            "desc": "Canada's largest bank. Searches data, technology and DBA roles on RBC's careers site.",
+            "desc": "Canada's largest bank. RBC's careers site sits behind a CloudFront firewall that "
+                    "sometimes returns a 403 -- if so, retry shortly or open jobs.rbc.com directly.",
             "tpl": "https://jobs.rbc.com/ca/en/search-results?keywords={Q}",
             "noCount": True,
         },
@@ -615,6 +617,62 @@ def api_scan():
     return jsonify(ok=True, state="skip", method="none")
 
 
+# discovered location-facet URL params per active location -- cached so the
+# Workday bank links can be pre-filtered without re-probing on every page load
+_BANK_LOC_CACHE = {}
+
+
+def _bank_location_links(location):
+    """For each Workday bank, discover the URL query params that filter its
+    careers page to the active location.
+
+    Workday deep-links facets by their parameter name and opaque value id, so
+    we probe the facet list and translate the matched location into a query
+    fragment like "locationCountry=<id>&locations=<id>". Returns
+    {site_id: {"q": fragment, "place": descriptor}}; cached per location.
+    """
+    sig = "|".join(_norm((location or {}).get(k))
+                   for k in ("country", "state", "city"))
+    if sig in _BANK_LOC_CACHE:
+        return _BANK_LOC_CACHE[sig]
+    out = {}
+    for section, items in SITES.items():
+        for idx, site in enumerate(items):
+            wd = site.get("workday")
+            if not wd:
+                continue
+            try:
+                api = "https://%s/wday/cxs/%s/%s/jobs" % (
+                    wd["host"], wd["tenant"], wd["site"])
+                headers = {
+                    "User-Agent": USER_AGENT, "Accept": "application/json",
+                    "Content-Type": "application/json",
+                    "Referer": "https://%s/" % wd["host"],
+                }
+                probe = _workday_post(api, headers, "", 0, {})
+                applied, used = _match_location(probe.get("facets", []), location)
+                parts = []
+                for param, ids in applied.items():
+                    for vid in ids:
+                        parts.append("%s=%s" % (
+                            param, urllib.parse.quote(str(vid), safe="")))
+                if parts:
+                    out["%s-%d" % (section, idx)] = {
+                        "q": "&".join(parts),
+                        "place": used[-1] if used else None,
+                    }
+            except Exception:                     # noqa: BLE001 -- best effort
+                continue
+    _BANK_LOC_CACHE[sig] = out
+    return out
+
+
+@app.route("/api/bank-locations")
+def api_bank_locations():
+    cfg = load_config()
+    return jsonify(banks=_bank_location_links(active_location(cfg)))
+
+
 # ---------------------------------------------------------------------------
 # HTML TEMPLATE  (visuals ported verbatim from the original launchpad artifact)
 # ---------------------------------------------------------------------------
@@ -937,6 +995,7 @@ TEMPLATE = r"""<!DOCTYPE html>
     <ul>
       <li>This is a self-contained Flask app. Your job types, locations and search term are saved to <strong>config.json</strong> next to <code>app.py</code>.</li>
       <li>Each card opens a <strong>live, pre-filtered search</strong> built from your current term and active location.</li>
+      <li><strong>Indeed, LinkedIn and Glassdoor are left out on purpose.</strong> You almost certainly already run daily job alerts on those big three &mdash; this launchpad deliberately covers the channels beyond them (government boards, regional boards, recruiters and employer career sites) that are easy to forget to check.</li>
       <li>The <strong>Active leads</strong> tab lists specific openings; each shows the date it was first seen. The green &ldquo;new&rdquo; tag and count pills mark leads from the most recent refresh.</li>
       <li>To wire automatic weekday scanning into this app, or add more job sites for other countries, just ask Claude.</li>
     </ul>
@@ -1115,8 +1174,31 @@ function refreshCounts() {
 
 function rebuildLinks() {
   document.querySelectorAll("a.open[data-tpl]").forEach(a => {
-    a.href = buildUrl(a.dataset.tpl);
+    let u = buildUrl(a.dataset.tpl);
+    if (a.dataset.locq) u += (u.indexOf("?") >= 0 ? "&" : "?") + a.dataset.locq;
+    a.href = u;
   });
+}
+
+/* Pre-filter the Workday bank links to the active location. Workday filters by
+   opaque facet ids, so the server probes each bank and hands back the URL
+   query fragment; we stash it on the card and fold it into every rebuild. */
+function applyBankLocations() {
+  fetch("/api/bank-locations").then(r => r.json()).then(d => {
+    const banks = (d && d.banks) || {};
+    Object.keys(banks).forEach(sid => {
+      const card = document.querySelector('.card[data-site-id="' + sid + '"]');
+      if (!card) return;
+      const a = card.querySelector("a.open");
+      if (!a) return;
+      if (banks[sid].q) a.dataset.locq = banks[sid].q;
+      if (banks[sid].place) {
+        a.textContent = "Open search · " + banks[sid].place + " ↗";
+        a.title = "Search pre-filtered to " + banks[sid].place;
+      }
+    });
+    rebuildLinks();
+  }).catch(() => {});
 }
 
 /* ---- search term + presets ---- */
@@ -1345,6 +1427,7 @@ scanBtn.addEventListener("click", runScan);
 /* ---- go ---- */
 renderPresets();
 render();
+applyBankLocations();
 </script>
 </body>
 </html>
