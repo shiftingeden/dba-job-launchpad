@@ -466,19 +466,46 @@ def _is_fresh(posted_on):
     return "today" in p or "yesterday" in p
 
 
-def _workday_search(api, headers, query):
+def _workday_post(api, headers, query, offset, applied):
+    """One Workday /jobs request -> parsed JSON (raises on HTTP failure)."""
+    payload = json.dumps({"appliedFacets": applied or {}, "limit": 20,
+                          "offset": offset, "searchText": query})
+    resp = requests.post(api, data=payload, headers=headers, timeout=15)
+    if resp.status_code in (401, 403, 429):
+        raise _ScanBlocked(resp.status_code)
+    if resp.status_code != 200:
+        raise _ScanError("HTTP %d" % resp.status_code)
+    return resp.json()
+
+
+def _find_country_facet(facets, country):
+    """Find the Workday location facet value for `country`.
+
+    Workday filters by opaque facet ids, not place names, so we read the facet
+    list from a probe response and match the wanted country by its descriptor.
+    Returns (facetParameter, value_id, descriptor) or (None, None, None).
+    """
+    want = (country or "").strip().lower()
+    if not want:
+        return None, None, None
+    for facet in facets or []:
+        fp = facet.get("facetParameter") or ""
+        if "countr" not in fp.lower() and "location" not in fp.lower():
+            continue
+        for val in facet.get("values", []):
+            desc = val.get("descriptor") or ""
+            d = desc.lower()
+            if val.get("id") and (d == want or want in d or d in want):
+                return fp, val["id"], desc
+    return None, None, None
+
+
+def _workday_search(api, headers, query, applied):
     """Return every Workday posting matching `query` (paged, capped at 120)."""
     found = []
     offset = 0
     while offset < 120:                           # bound work: first 120 hits
-        payload = json.dumps({"appliedFacets": {}, "limit": 20,
-                              "offset": offset, "searchText": query})
-        resp = requests.post(api, data=payload, headers=headers, timeout=15)
-        if resp.status_code in (401, 403, 429):
-            raise _ScanBlocked(resp.status_code)
-        if resp.status_code != 200:
-            raise _ScanError("HTTP %d" % resp.status_code)
-        data = resp.json()
+        data = _workday_post(api, headers, query, offset, applied)
         total = data.get("total", 0)
         postings = data.get("jobPostings") or []
         if not postings:
@@ -490,25 +517,37 @@ def _workday_search(api, headers, query):
     return found
 
 
-def scan_workday_all(wd, job_types):
-    """Scan a Workday careers API across every saved job type.
+def scan_workday_all(wd, job_types, location):
+    """Scan a Workday careers API across every saved job type, constrained to
+    the active location's country.
 
     Each job type is searched separately; postings are merged and de-duplicated
-    by job path, so a role matching two job types is only counted once.
+    by job path, so a role matching two job types is counted once. Results are
+    limited to the active location's country via Workday's location facet, so a
+    Montreal-based search does not count, say, a Chicago posting.
     """
     api = "https://%s/wday/cxs/%s/%s/jobs" % (wd["host"], wd["tenant"], wd["site"])
     headers = {
         "User-Agent": USER_AGENT, "Accept": "application/json",
         "Content-Type": "application/json", "Referer": "https://%s/" % wd["host"],
     }
+    country = ((location or {}).get("country") or "").strip()
+    job_types = [(j or "").strip() for j in (job_types or []) if (j or "").strip()]
+    job_types = job_types[:10] or ["data"]
     by_path = {}
     breakdown = {}
+    applied = {}
+    location_used = None
     try:
-        for job_type in (job_types or [])[:10]:
-            jt = (job_type or "").strip()
-            if not jt:
-                continue
-            postings = _workday_search(api, headers, jt)
+        # probe with an empty query to read the full facet list, then pick the
+        # facet id that constrains results to the active country
+        probe = _workday_post(api, headers, "", 0, {})
+        fparam, fid, fdesc = _find_country_facet(probe.get("facets", []), country)
+        if fparam and fid:
+            applied = {fparam: [fid]}
+            location_used = fdesc
+        for jt in job_types:
+            postings = _workday_search(api, headers, jt, applied)
             breakdown[jt] = len(postings)
             for post in postings:
                 key = post.get("externalPath") or post.get("title")
@@ -528,7 +567,8 @@ def scan_workday_all(wd, job_types):
                 "detail": "site did not return valid JSON"}
     fresh = sum(1 for p in by_path.values() if _is_fresh(p.get("postedOn")))
     return {"ok": True, "state": "ok", "method": "workday",
-            "fresh": fresh, "total": len(by_path), "breakdown": breakdown}
+            "fresh": fresh, "total": len(by_path), "breakdown": breakdown,
+            "location": location_used, "country": country}
 
 
 @app.route("/api/scan", methods=["POST"])
@@ -541,8 +581,10 @@ def api_scan():
         return jsonify(ok=False, state="error", detail="Unknown site."), 400
     site = sites[int(idx)]
     if site.get("workday"):
-        job_types = load_config().get("job_types", [])
-        return jsonify(**scan_workday_all(site["workday"], job_types))
+        cfg = load_config()
+        return jsonify(**scan_workday_all(site["workday"],
+                                          cfg.get("job_types", []),
+                                          active_location(cfg)))
     # other sites have no reliable open API -- not auto-scanned
     return jsonify(ok=True, state="skip", method="none")
 
@@ -1180,17 +1222,27 @@ function showScanres(el, res) {
   let cls = "scanres", txt = "", tip = "";
   if (res.state === "ok") {
     const total = (res.total != null) ? res.total.toLocaleString() : "?";
+    const where = res.location ? (" in " + res.location) : " matching";
     if (res.fresh > 0) {
       cls += " s-new";
-      txt = res.fresh + " new ≤ 24h · " + total + " matching";
+      txt = res.fresh + " new ≤ 24h · " + total + where;
     } else {
       cls += " s-ok";
-      txt = "0 new · " + total + " matching";
+      txt = "0 new · " + total + where;
     }
+    const lines = [];
     if (res.breakdown) {
-      tip = "Matches per job type:\n" + Object.keys(res.breakdown)
-        .map(k => "  " + k + ": " + res.breakdown[k]).join("\n");
+      lines.push("Matches per job type:");
+      Object.keys(res.breakdown).forEach(k =>
+        lines.push("  " + k + ": " + res.breakdown[k]));
     }
+    if (res.location) {
+      lines.push("Filtered to country: " + res.location);
+    } else if (res.country) {
+      lines.push("Note: a “" + res.country + "” location filter could not be "
+        + "applied, so counts include all locations.");
+    }
+    tip = lines.join("\n");
   } else if (res.state === "blocked") {
     cls += " s-block"; txt = "site blocked the scan";
   } else {
