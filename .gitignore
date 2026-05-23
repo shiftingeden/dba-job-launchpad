@@ -1,0 +1,6 @@
+# runtime / test artifacts
+server.log
+__pycache__/
+*.pyc
+.venv/
+venv/

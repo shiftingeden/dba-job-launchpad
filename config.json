@@ -1,0 +1,96 @@
+{
+  "term": "SQL Server DBA",
+  "job_types": [
+    "SQL Server DBA",
+    "Database Administrator",
+    "Data Engineer",
+    "SQL Developer",
+    "Data Architect"
+  ],
+  "locations": [
+    {
+      "id": "loc-montreal",
+      "country": "Canada",
+      "state": "Quebec",
+      "city": "Montreal"
+    }
+  ],
+  "active_location": "loc-montreal",
+  "last_scan": "Fri May 22, 2026",
+  "leads": {
+    "leads-onsite": [
+      {
+        "name": "National Bank -- Oracle Application Database Administrator (DBA)",
+        "src": "onsite-board-0",
+        "firstSeen": "Thu May 21, 2026",
+        "desc": "Senior DBA specialist on National Bank's Master Data Profile team, Montreal on-site; manages and optimizes database environments across Unix/Linux and Windows. Posted on Jobillico.",
+        "url": "https://www.jobillico.com/en/job-offer/national-bank/oracle-application-database-administrator-dba-/16517994"
+      },
+      {
+        "name": "CONSULTATION ISGA INC. -- DBA, 1 Place Ville Marie",
+        "src": "onsite-aggr-0",
+        "firstSeen": "Thu May 21, 2026",
+        "desc": "Montreal DBA posting on Job Bank, surfaced with an application deadline of May 29, 2026 -- time-sensitive, verify and apply soon if it fits.",
+        "url": "https://www.jobbank.gc.ca/jobsearch/jobposting/49046313"
+      },
+      {
+        "name": "Services Conseils IntelliSoft -- Senior SQL Server DBA",
+        "src": "onsite-aggr-1",
+        "firstSeen": "Thu May 21, 2026",
+        "desc": "Senior SQL Server DBA in Montreal; salary cited around $53K-$100K. Confirm it is still posted.",
+        "url": "https://www.eluta.ca/search?q=SQL%20Server%20DBA&l=Montreal+QC"
+      },
+      {
+        "name": "Akkodis -- Senior Database Administrator (SQL Server / Oracle)",
+        "src": null,
+        "firstSeen": "Thu May 21, 2026",
+        "desc": "Senior DBA managing MS SQL Server and/or Oracle environments, full-time, Montreal.",
+        "url": "https://www.akkodis.com/en-ca/jobs?query=database%20administrator&location=Montreal"
+      },
+      {
+        "name": "Groupe Fed (Fed IT) -- Database Administrator",
+        "src": "onsite-board-0",
+        "firstSeen": "Thu May 21, 2026",
+        "desc": "Montreal DBA role: MS SQL Server multi-server environments, T-SQL / SSIS / SSRS / SSMS.",
+        "url": "https://www.jobillico.com/en/job-offer/fed-it-dszhrq/database-administrator/11371758"
+      },
+      {
+        "name": "Renaps Technology Canada -- DBA, Centre of Excellence",
+        "src": "onsite-aggr-1",
+        "firstSeen": "Thu May 21, 2026",
+        "desc": "Database Administrator joining Renaps' Centre of Excellence team in Montreal.",
+        "url": "https://www.eluta.ca/search?q=database%20administrator&l=Montreal+QC"
+      },
+      {
+        "name": "Intact Financial -- Database Administrator",
+        "src": null,
+        "firstSeen": "Thu May 21, 2026",
+        "desc": "DBA openings in Montreal at Intact -- check their career site for current SQL Server roles.",
+        "url": "https://careers.intact.ca/ca/en/search-results?keywords=database%20administrator"
+      }
+    ],
+    "leads-remote": [
+      {
+        "name": "PointClickCare -- Sr. MS SQL Database Administrator",
+        "src": "remote-board-4",
+        "firstSeen": "Thu May 21, 2026",
+        "desc": "Senior MSSQL DBA for a Canadian healthcare-SaaS company (HQ Mississauga, ON); posting is listed remote and is carried on Canadian job boards -- confirmed Canada-eligible. Strong SQL Server match.",
+        "url": "https://builtin.com/job/senior-ms-sql-dba/2129862"
+      },
+      {
+        "name": "CMHC -- Senior Specialist, Database Administrator (SQL Server / Azure SQL)",
+        "src": "remote-aggr-0",
+        "firstSeen": "Thu May 21, 2026",
+        "desc": "Canadian crown corporation with senior SQL Server / Azure SQL DBA postings on Job Bank. Canada-eligible, but Ottawa-based government roles are typically hybrid -- confirm it is fully remote before treating it as a pure remote lead.",
+        "url": "https://www.jobbank.gc.ca/jobsearch/jobposting/49378553"
+      },
+      {
+        "name": "Fleetio -- Senior Database Administrator (DBA)",
+        "src": "remote-board-0",
+        "firstSeen": "Fri May 22, 2026",
+        "desc": "Senior DBA at a fleet-management SaaS, posted on We Work Remotely. Fully remote and explicitly open to candidates in Canada (US / Canada / Mexico) -- confirmed not hybrid; 80%+ of engineering is remote.",
+        "url": "https://weworkremotely.com/remote-jobs/fleetio-senior-database-administrator-dba"
+      }
+    ]
+  }
+}
