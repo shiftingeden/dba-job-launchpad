@@ -291,6 +291,14 @@ site is a JavaScript app whose listings a plain request cannot see, so it is sca
 with a headless browser (the optional Playwright install). Until Playwright is
 installed, those sites report "setup needed" while the banks still scan fine.
 
+**Auto-broadening.** Job-site search needs *every* word you type to appear in a
+posting, so a specific phrase like "SQL Server DBA" can match nothing even when a
+bank has plenty of database roles — it titles them "Database Administrator". When
+the exact term comes back empty, the scan automatically retries with shorter
+sub-phrases, and the result chip notes which query actually matched (e.g. *via
+"DBA"*). For the most accurate counts, scan with a term close to how the postings
+are actually titled — "Database Administrator" rather than "SQL Server DBA".
+
 A scan genuinely takes a little time — it is making real requests to real job sites,
 not a trick — so a full run across every site can take a minute or two.
 

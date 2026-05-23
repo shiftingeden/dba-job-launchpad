@@ -471,21 +471,35 @@ def _is_fresh(posted_on):
     return "today" in p or "yesterday" in p
 
 
-def scan_workday(wd, term):
-    """Query a Workday careers JSON API; count roles posted today/yesterday."""
-    api = "https://%s/wday/cxs/%s/%s/jobs" % (wd["host"], wd["tenant"], wd["site"])
-    headers = {
-        "User-Agent": USER_AGENT,
-        "Accept": "application/json",
-        "Content-Type": "application/json",
-        "Referer": "https://%s/" % wd["host"],
-    }
+def query_ladder(term):
+    """Build search queries from broad-to-specific. ATS keyword search needs
+    every word to appear, so a long phrase like "SQL Server DBA" often matches
+    nothing -- we try the full term first, then shorter contiguous sub-phrases
+    (windows ending on the role word are tried first), down to single words."""
+    words = (term or "").split()
+    n = len(words)
+    if n <= 1:
+        return [term.strip()] if term.strip() else []
+    out = []
+    for length in range(n, 0, -1):
+        windows = [words[s:s + length] for s in range(0, n - length + 1)]
+        windows.sort(key=lambda w: 0 if w[-1] == words[-1] else 1)
+        for w in windows:
+            q = " ".join(w)
+            if q not in out:
+                out.append(q)
+    return out[:5]
+
+
+def _workday_count(api, headers, query):
+    """Page one Workday search query; return total + count posted <=24h.
+    Stops after the first request when the query has no matches."""
     fresh = total = scanned = 0
     offset = 0
     try:
-        while offset < 200:                       # bound work: first 200 hits
+        while offset < 120:                       # bound work: first 120 hits
             payload = json.dumps({"appliedFacets": {}, "limit": 20,
-                                  "offset": offset, "searchText": term})
+                                  "offset": offset, "searchText": query})
             resp = requests.post(api, data=payload, headers=headers, timeout=15)
             if resp.status_code in (401, 403, 429):
                 return {"ok": False, "state": "blocked", "method": "workday",
@@ -513,6 +527,31 @@ def scan_workday(wd, term):
                 "detail": "site did not return valid JSON"}
     return {"ok": True, "state": "ok", "method": "workday",
             "fresh": fresh, "total": total, "scanned": scanned}
+
+
+def scan_workday(wd, term):
+    """Query a Workday careers JSON API, counting roles posted today/yesterday.
+    If the exact term matches nothing, the query is automatically broadened."""
+    api = "https://%s/wday/cxs/%s/%s/jobs" % (wd["host"], wd["tenant"], wd["site"])
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Referer": "https://%s/" % wd["host"],
+    }
+    queries = query_ladder(term) or [term or "data"]
+    fallback = None
+    for query in queries:
+        res = _workday_count(api, headers, query)
+        if not res["ok"]:
+            return res                            # network/blocked -> report
+        if fallback is None:
+            fallback = dict(res, query=query, broadened=False)
+        if res["total"] > 0:
+            res["query"] = query
+            res["broadened"] = (query != queries[0])
+            return res
+    return fallback                               # nothing matched anywhere
 
 
 def scan_browser(url):
@@ -1200,12 +1239,13 @@ function showScanres(el, res) {
   let cls = "scanres", txt = "";
   if (res.state === "ok") {
     const total = (res.total != null) ? res.total.toLocaleString() : "?";
+    const via = res.broadened ? " · via “" + res.query + "”" : "";
     if (res.fresh > 0) {
       cls += " s-new";
-      txt = res.fresh + " new ≤ 24h · " + total + " total";
+      txt = res.fresh + " new ≤ 24h · " + total + " total" + via;
     } else {
       cls += " s-ok";
-      txt = "0 new · " + total + " total";
+      txt = "0 new · " + total + " total" + via;
     }
   } else if (res.state === "blocked") {
     cls += " s-block"; txt = "site blocked the scan";
