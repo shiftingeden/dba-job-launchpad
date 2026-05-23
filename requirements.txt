@@ -1,6 +1,2 @@
 Flask>=3.0
 requests>=2.31
-
-# Optional -- only needed for the "Scan now" feature on non-Workday sites.
-# Install with:  pip install playwright  &&  playwright install chromium
-# playwright>=1.40

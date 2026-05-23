@@ -68,10 +68,10 @@ database and data professionals and often post roles to their own portals first.
 it was first seen, and a direct link to the posting. Leads found on the most recent
 refresh are flagged as "New" with a green highlight.
 
-**A live scan.** The **⟳ Scan now** button checks every job site for roles matching
-your search term that were posted in the **last ~24 hours**, shows a progress bar
-while it works, and puts a result count on each card. The Workday-based banks (TD,
-BMO, CIBC) are scanned through their job API; other sites use a headless browser.
+**A live scan.** The **⟳ Scan now** button checks the Workday banks (TD, BMO, CIBC)
+for roles posted in the **last ~24 hours**, searching across *every* job type you
+have saved. It shows a progress bar while it works and puts a real count on each
+bank card. (Other sites have no reliable open API and aren't auto-scanned.)
 
 **Per-device progress tracking.** Every card has a checkbox. Tick the sites you've
 already searched or the leads you've already reviewed; the state is remembered in
@@ -120,12 +120,9 @@ green "New" badge and a highlighted border.
 - **Python 3.8 or newer** (developed and tested on Python 3.10+)
 - **Flask** and **requests** — installed via the step below
 - A web browser
-- *Optional, for the full scan feature:* **Playwright** + a Chromium build. Without
-  it, the scan still works for the Workday banks (TD, BMO, CIBC); other sites simply
-  report "browser scan: setup needed". See [Installation](#installation).
 
-No database and no build step. The app reaches the internet when you click through
-to a job site and when you run a scan.
+No database, no build step, nothing else to install. The app reaches the internet
+when you click through to a job site and when you run a scan.
 
 ---
 
@@ -145,20 +142,6 @@ python -m venv .venv
 source .venv/bin/activate        # on Windows: .venv\Scripts\activate
 pip install -r requirements.txt
 ```
-
-### Optional: enable scanning on every site
-
-The **Scan** feature (see [step 6](#6-scan-for-new-roles)) counts how many roles each
-site posted in the last ~24 hours. The Workday-based banks — **TD, BMO, CIBC** — are
-scanned through their job API and need nothing extra. Every other site is a
-JavaScript app, so scanning it needs a headless browser. This is a one-time setup:
-
-```bash
-pip install playwright
-playwright install chromium
-```
-
-Skip this if you only want to scan the banks; those work out of the box.
 
 ---
 
@@ -268,39 +251,40 @@ The **Clear all checkmarks** button at the bottom resets them.
 
 ### 6. Scan for new roles
 
-At the right-hand end of the tab bar is the **⟳ Scan now** button. It checks every
-job site for roles matching your current search term that were **posted in the last
-~24 hours** (posted today or yesterday).
+At the right-hand end of the tab bar is the **⟳ Scan now** button. It checks the
+three banks whose careers run on Workday — **TD, BMO and CIBC** — for roles
+**posted in the last ~24 hours** (today or yesterday).
 
-When you click it, a progress bar appears and the launchpad works through the sites
-a few at a time. As each site finishes, a result chip appears on its card:
+When you click it, a progress bar appears. As each bank finishes, a result chip
+appears on its card:
 
-- **green** — *N* new roles posted in the last ~24h, plus the total match count
+- **green** — *N* roles posted in the last ~24h, plus the total matching count
 - **grey** — scanned fine, but nothing posted that recently
-- **blue** — *browser scan: setup needed* (see the optional install step above)
-- **amber** — the site blocked the automated request
-- **red** — the site could not be reached
+- **amber** — the bank blocked the automated request
+- **red** — the scan could not be completed
 
-When the scan finishes, the bar shows a summary of how many new roles turned up
-across all sites.
+When the scan finishes, the bar shows how many new roles turned up across the banks.
 
-**Two scan methods, chosen automatically.** The banks that run on Workday — **TD,
-BMO and CIBC** — are scanned through their careers job API, which returns each
-posting's date directly. That is fast, reliable, and needs no setup. Every other
-site is a JavaScript app whose listings a plain request cannot see, so it is scanned
-with a headless browser (the optional Playwright install). Until Playwright is
-installed, those sites report "setup needed" while the banks still scan fine.
+**It searches all your job types — this is the important part.** Job-site search
+engines need *every* word you type to appear in a posting, so a specific phrase like
+"SQL Server DBA" matches nothing even at a bank full of database roles — the bank
+titles them "Database Administrator". To get around that, the scan searches each
+bank for **every job type in your presets** ("SQL Server DBA", "Database
+Administrator", "Data Engineer", …) and merges the results, de-duplicated by job.
+So as long as *one* of your job types is worded the way postings actually are, the
+count comes out right. Add or remove job types (step 2) to tune what the scan looks
+for; hover a result chip to see the per-job-type breakdown.
 
-**Auto-broadening.** Job-site search needs *every* word you type to appear in a
-posting, so a specific phrase like "SQL Server DBA" can match nothing even when a
-bank has plenty of database roles — it titles them "Database Administrator". When
-the exact term comes back empty, the scan automatically retries with shorter
-sub-phrases, and the result chip notes which query actually matched (e.g. *via
-"DBA"*). For the most accurate counts, scan with a term close to how the postings
-are actually titled — "Database Administrator" rather than "SQL Server DBA".
+**Why only the banks.** TD, BMO and CIBC run on Workday, which exposes a JSON jobs
+API that returns each posting's title and posted date — fast, reliable, no setup.
+The other career sites (RBC, Scotiabank, National Bank, and the general job boards)
+are JavaScript apps with no comparable open API and no dependable way to read a
+filtered, date-aware count, so they are deliberately *not* auto-scanned — their
+cards stay as one-click search links. This is a conscious choice: show real numbers
+only where they can be trusted.
 
-A scan genuinely takes a little time — it is making real requests to real job sites,
-not a trick — so a full run across every site can take a minute or two.
+A scan makes real requests to a real careers API, so it takes a little time — a run
+across the three banks usually finishes within a minute.
 
 ---
 
@@ -322,10 +306,10 @@ launchpad page (HTML, CSS and JavaScript embedded as a template string).
   the page.
 - **State** lives in two places: everything editable is persisted server-side to
   `config.json`; checkmarks are kept browser-side in `localStorage`.
-- **Scanning** calls `/api/scan` once per site. Workday banks are scanned via their
-  JSON job API (`/wday/cxs/.../jobs`), which returns each posting's `postedOn` date;
-  every other site is rendered in a headless browser and its posted-date phrases are
-  read from the page text.
+- **Scanning** calls `/api/scan` once per Workday bank. The server searches that
+  bank's JSON job API (`/wday/cxs/.../jobs`) for every saved job type, merges and
+  de-duplicates the postings by job path, and counts those whose `postedOn` is today
+  or yesterday. Non-Workday sites return a "skip" response and are not scanned.
 
 ### API endpoints
 
@@ -338,7 +322,7 @@ launchpad page (HTML, CSS and JavaScript embedded as a template string).
 | `POST /api/locations/delete` | Remove a location — body `{"id": "..."}` |
 | `POST /api/locations/active` | Switch active location — body `{"id": "..."}` |
 | `POST /api/term` | Save the current search term — body `{"term": "..."}` |
-| `POST /api/scan` | Scan one site for recent postings — body `{"site_id","term","url"}` |
+| `POST /api/scan` | Scan one bank for recent postings — body `{"site_id"}` |
 
 ---
 
@@ -432,13 +416,12 @@ the app, edit, then start it again.
 ## Notes and limitations
 
 - The launchpad's **search links** don't fetch anything — they just open a pre-built
-  search on the job site. The **Scan** feature *does* make live requests to job sites
-  to count roles posted recently. Treat its numbers as a strong hint, not gospel —
-  the browser-scanned sites in particular are read heuristically from the rendered
-  page — and always open a posting to confirm the details before applying.
-- The scanner could not be tested against live job sites in the build environment
-  (its network blocks those domains). The Workday bank API calls and the page parsing
-  follow documented patterns, but verify the counts look right on your own machine.
+  search on the job site. The **Scan** feature *does* make live requests to the
+  Workday bank APIs to count roles posted recently; always open a posting to confirm
+  the details before applying.
+- The scanner could not be tested against the live Workday API in the build
+  environment (its network blocks that domain). The API calls follow Workday's
+  documented request shape, but verify the counts look right on your own machine.
 - The "Active leads" list and the `last_scan` date are seed data. They do not update
   on their own — refreshing them is a separate task.
 - The development server (`python app.py`) is meant for **local, single-user** use.
