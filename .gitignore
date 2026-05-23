@@ -4,3 +4,6 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# stray nested clone left by an early `git clone` test
+dba-job-launchpad/

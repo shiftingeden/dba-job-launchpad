@@ -9,7 +9,8 @@ what you've already checked.
 It is built for **database and data roles** (SQL Server DBA, Database Administrator,
 Data Engineer, and similar) and deliberately focuses on channels **beyond** the
 usual Indeed / Glassdoor / LinkedIn trio — government boards, regional boards,
-employer-page aggregators, remote-only boards and specialist IT recruiters.
+employer-page aggregators, remote-only boards, specialist IT recruiters, and the
+Big Six Canadian banks' own career sites.
 
 ![On-site tab of the launchpad](docs/screenshot-onsite.png)
 
@@ -26,8 +27,9 @@ employer-page aggregators, remote-only boards and specialist IT recruiters.
   - [1. Set your search term](#1-set-your-search-term)
   - [2. Manage your job types](#2-manage-your-job-types)
   - [3. Set your location](#3-set-your-location)
-  - [4. Work the three tabs](#4-work-the-three-tabs)
+  - [4. Work the four tabs](#4-work-the-four-tabs)
   - [5. Track progress with checkmarks](#5-track-progress-with-checkmarks)
+  - [6. Re-run the page](#6-re-run-the-page)
 - [How it works](#how-it-works)
 - [The `config.json` file](#the-configjson-file)
 - [Job sites included](#job-sites-included)
@@ -39,7 +41,7 @@ employer-page aggregators, remote-only boards and specialist IT recruiters.
 
 ## What it does
 
-The launchpad has five moving parts.
+The launchpad has several moving parts.
 
 **Live search links.** Every job site is shown as a card with an "Open search" link.
 The link is *not* static — it is rebuilt from your current search term and active
@@ -56,10 +58,19 @@ need — your set is saved to disk and reloaded next time.
 location-aware search link on the page. Add Toronto, add a US city, switch between
 them with a dropdown.
 
+**A "Big Six banks" tab.** A dedicated tab links straight into the career sites of
+Canada's six largest banks — RBC, TD, Scotiabank, BMO, CIBC and National Bank of
+Canada — each pre-filtered to your current search term. Banks are major employers of
+database and data professionals and often post roles to their own portals first.
+
 **An "Active leads" tab.** Beyond generic search links, the launchpad keeps a list of
 **specific openings** worth verifying — company, role, a one-line summary, the date
 it was first seen, and a direct link to the posting. Leads found on the most recent
 refresh are flagged as "New" with a green highlight.
+
+**A re-run button.** The **↻ Re-run** button in the tab bar reloads the page,
+re-pulls your saved job types, locations and search term from the server, and
+rebuilds every search link — handy right after you add new job types.
 
 **Per-device progress tracking.** Every card has a checkbox. Tick the sites you've
 already searched or the leads you've already reviewed; the state is remembered in
@@ -84,6 +95,14 @@ applied. The "Remote" tab chip carries a green count when the latest refresh fou
 new remote leads.
 
 ![Remote tab](docs/screenshot-remote.png)
+
+### Big Six banks tab
+
+Direct links into the career sites of Canada's six largest banks — RBC, TD,
+Scotiabank, BMO, CIBC and National Bank — each pre-filtered to your search term.
+The **↻ Re-run** button is visible at the right of the tab bar.
+
+![Big Six banks tab](docs/screenshot-banks.png)
 
 ### Active leads tab
 
@@ -183,7 +202,7 @@ location-aware search links target.
 - **Remove a location:** select it in the dropdown and click **Remove this
   location**. You must always keep at least one.
 
-### 4. Work the three tabs
+### 4. Work the four tabs
 
 **On-site** — job sites useful for local / on-site roles, grouped into:
 
@@ -199,6 +218,12 @@ location-aware search links target.
   Nomads, Built In, DailyRemote
 - *Government & aggregators* — Job Bank and Eluta with a remote filter applied
 
+**Big Six banks** — direct links into the career sites of Canada's six largest banks:
+RBC, TD, Scotiabank, BMO, CIBC and National Bank of Canada. Each card opens that
+bank's careers portal pre-filtered to your search term. Banks are major employers of
+database and data talent and often post to their own portals first. These cards show
+`—` ("direct"), like the recruiter cards — they are not lead-counted.
+
 **Active leads** — specific openings to verify, split into on-site and remote. Each
 lead card shows the company and role, a one-line description, the date it was first
 seen, and a **View posting** link. Always confirm a role is still open, the right
@@ -208,8 +233,9 @@ applying.
 **About the count pills.** Each job-site card carries a small pill. It shows how many
 leads in the "Active leads" tab were found via that site on the most recent refresh.
 A pill sits quietly at `0` on quiet days and turns **green** when something new lands.
-Recruiter cards show `—` ("direct") because they are not lead-counted. The tab chips
-themselves show a green *"N new"* badge when the latest refresh added new leads.
+Recruiter and bank cards show `—` ("direct") because they are not lead-counted. The
+tab chips themselves show a green *"N new"* badge when the latest refresh added new
+leads.
 
 ### 5. Track progress with checkmarks
 
@@ -217,6 +243,14 @@ Every card — site cards and lead cards alike — has a checkbox. Tick the ones
 already worked through; ticked cards dim so your eye skips them. This state is stored
 in your browser **on that device**, so it is private to you and does not sync.
 The **Clear all checkmarks** button at the bottom resets them.
+
+### 6. Re-run the page
+
+At the right-hand end of the tab bar is the **↻ Re-run** button. Clicking it reloads
+the page, which re-pulls your saved job types, locations and search term from the
+server and rebuilds every search link from scratch. It is the quickest way to get a
+clean, fully up-to-date page — especially handy right after you have added several
+new job types and want every link rebuilt around them.
 
 ---
 
@@ -293,6 +327,8 @@ The site catalogue currently leans Canada-first, reflecting the original use cas
   Kovasys
 - **Remote-only boards:** We Work Remotely, Jobgether, Remote Rocketship, Working
   Nomads, Built In, DailyRemote
+- **Big Six bank career sites:** RBC, TD, Scotiabank, BMO, CIBC, National Bank of
+  Canada — direct employer portals, searched by keyword
 
 If you set a location outside Canada the links still work as searches, but the
 Canada-specific boards (Job Bank, Jobillico) will be less useful. See *Extending it*

@@ -159,6 +159,47 @@ SITES = {
             "tpl": "https://www.eluta.ca/search?q={Q}",
         },
     ],
+    # Canadian "Big Six" bank career sites -- apply direct. These are nationwide
+    # employer portals, so they take only the search term ({Q}); filter location
+    # on the bank's own site. Like recruiters, they are not lead-counted.
+    "bank-direct": [
+        {
+            "name": "RBC -- Royal Bank of Canada", "badge": "b-bank", "label": "Bank",
+            "desc": "Canada's largest bank. Searches data, technology and DBA roles on RBC's careers site.",
+            "tpl": "https://jobs.rbc.com/ca/en/search-results?keywords={Q}",
+            "noCount": True,
+        },
+        {
+            "name": "TD -- Toronto-Dominion Bank", "badge": "b-bank", "label": "Bank",
+            "desc": "Major data and technology employer; searches TD's careers portal.",
+            "tpl": "https://jobs.td.com/en/job-search-results/?keywords={Q}",
+            "noCount": True,
+        },
+        {
+            "name": "Scotiabank -- Bank of Nova Scotia", "badge": "b-bank", "label": "Bank",
+            "desc": "Searches Scotiabank's global careers portal for data and database roles.",
+            "tpl": "https://jobs.scotiabank.com/search/?q={Q}",
+            "noCount": True,
+        },
+        {
+            "name": "BMO -- Bank of Montreal", "badge": "b-bank", "label": "Bank",
+            "desc": "Digital-first bank investing in data and AI; searches BMO's Canadian careers site.",
+            "tpl": "https://jobs.bmo.com/ca/en/search-results?keywords={Q}",
+            "noCount": True,
+        },
+        {
+            "name": "CIBC -- Canadian Imperial Bank of Commerce", "badge": "b-bank", "label": "Bank",
+            "desc": "Searches CIBC's Workday careers portal across all divisions.",
+            "tpl": "https://cibc.wd3.myworkdayjobs.com/search?q={Q}",
+            "noCount": True,
+        },
+        {
+            "name": "National Bank of Canada", "badge": "b-bank", "label": "Bank",
+            "desc": "Montreal-headquartered Big Six bank; searches National Bank's careers site.",
+            "tpl": "https://emplois.bnc.ca/en_CA/careers/SearchJobs/?keyword={Q}",
+            "noCount": True,
+        },
+    ],
 }
 
 # ---------------------------------------------------------------------------
@@ -483,6 +524,12 @@ TEMPLATE = r"""<!DOCTYPE html>
     padding: 1px 7px; border-radius: 999px; font-size: 10.5px;
   }
   .tab.active .cnt.hasnew { color: #fff; }
+  .refresh-btn {
+    margin-left: auto; border: 1px solid #1a5c9c; background: #fff; color: #1a5c9c;
+    padding: 7px 15px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    cursor: pointer; transition: all .12s;
+  }
+  .refresh-btn:hover { background: #1a5c9c; color: #fff; }
 
   .panel { display: none; }
   .panel.active { display: block; }
@@ -513,6 +560,7 @@ TEMPLATE = r"""<!DOCTYPE html>
   .b-board { background: #e4f4ea; color: #1f7a4d; }
   .b-recruit { background: #fae6ef; color: #a8326f; }
   .b-lead { background: #fde8da; color: #b8540f; }
+  .b-bank { background: #def0ef; color: #0f6b66; }
   .tag-new { background: #2e9e5b; color: #fff; }
   .desc { font-size: 12.5px; color: #565c63; margin-top: 4px; }
   .meta { font-size: 11px; color: #8a9098; margin-top: 5px; }
@@ -618,7 +666,9 @@ TEMPLATE = r"""<!DOCTYPE html>
   <div class="tabs">
     <button class="tab active" data-panel="onsite">On-site <span class="cnt" id="c-onsite"></span></button>
     <button class="tab" data-panel="remote">Remote <span class="cnt" id="c-remote"></span></button>
+    <button class="tab" data-panel="banks">Big Six banks</button>
     <button class="tab" data-panel="leads">Active leads <span class="cnt" id="c-leads"></span></button>
+    <button class="refresh-btn" id="rerun" title="Reload the page and rebuild every search link">&#8635; Re-run</button>
   </div>
 
   <div class="panel active" id="onsite">
@@ -635,6 +685,11 @@ TEMPLATE = r"""<!DOCTYPE html>
     <div id="remote-board"></div>
     <div class="grp-label">Government &amp; aggregators (filter for remote)</div>
     <div id="remote-aggr"></div>
+  </div>
+
+  <div class="panel" id="banks">
+    <div class="grp-label">Canadian &ldquo;Big Six&rdquo; bank career sites &mdash; apply direct</div>
+    <div id="bank-direct"></div>
   </div>
 
   <div class="panel" id="leads">
@@ -658,7 +713,8 @@ TEMPLATE = r"""<!DOCTYPE html>
       <li><strong>Confirm your country is in scope:</strong> many &ldquo;remote&rdquo; roles are remote within one country only, or restricted to one province/region. Confirm before treating a role as a remote lead.</li>
       <li><strong>Language note:</strong> regional boards like Jobboom and Jobillico are French-first. Also search &ldquo;administrateur de base de donn&eacute;es&rdquo; to catch French-only postings.</li>
       <li><strong>Recruiters are the hidden market:</strong> senior and contract roles often go through Robert Half, Procom, S.i. Systems, Akkodis and Fed IT before (or instead of) public boards.</li>
-      <li><strong>Go direct:</strong> big employers post on their own career sites first.</li>
+      <li><strong>Go direct:</strong> big employers post on their own career sites first &mdash; the <strong>Big Six banks</strong> tab links straight into RBC, TD, Scotiabank, BMO, CIBC and National Bank.</li>
+      <li><strong>Re-run anytime:</strong> the <strong>&#8635; Re-run</strong> button reloads the page and rebuilds every search link from your latest saved job types and location.</li>
     </ul>
     <button class="reset" id="reset">Clear all checkmarks</button>
   </footer>
@@ -930,6 +986,9 @@ document.querySelectorAll(".tab").forEach(tab => {
 });
 
 document.getElementById("reset").addEventListener("click", () => { checks = {}; save(); render(); });
+
+/* ---- re-run: reload the page, re-pull config, rebuild every search link ---- */
+document.getElementById("rerun").addEventListener("click", () => { location.reload(); });
 
 /* ---- go ---- */
 renderPresets();
