@@ -1,21 +1,348 @@
-# DBA / Data Roles -- Job Search Launchpad
+# DBA / Data Roles — Job Search Launchpad
 
-A local Flask app: a job-search launchpad for DBA / data roles. Each card opens a
-live, pre-filtered search on a job site, rebuilt from your current search term and
-active location. Includes in-app controls to add/remove job types and locations
-(country / state-province / city), plus an "Active leads" tab.
+A local web app that turns a scattered job hunt into a single, organised launchpad.
+Instead of re-typing the same search into a dozen different job sites, you set your
+search term and location **once** — the launchpad builds a live, pre-filtered search
+link for every site, tracks specific openings worth a look, and lets you tick off
+what you've already checked.
 
-## Run
+It is built for **database and data roles** (SQL Server DBA, Database Administrator,
+Data Engineer, and similar) and deliberately focuses on channels **beyond** the
+usual Indeed / Glassdoor / LinkedIn trio — government boards, regional boards,
+employer-page aggregators, remote-only boards and specialist IT recruiters.
 
-```
+![On-site tab of the launchpad](docs/screenshot-onsite.png)
+
+---
+
+## Table of contents
+
+- [What it does](#what-it-does)
+- [Screenshots](#screenshots)
+- [Requirements](#requirements)
+- [Installation](#installation)
+- [Running the app](#running-the-app)
+- [How to use it](#how-to-use-it)
+  - [1. Set your search term](#1-set-your-search-term)
+  - [2. Manage your job types](#2-manage-your-job-types)
+  - [3. Set your location](#3-set-your-location)
+  - [4. Work the three tabs](#4-work-the-three-tabs)
+  - [5. Track progress with checkmarks](#5-track-progress-with-checkmarks)
+- [How it works](#how-it-works)
+- [The `config.json` file](#the-configjson-file)
+- [Job sites included](#job-sites-included)
+- [Extending it](#extending-it)
+- [Troubleshooting](#troubleshooting)
+- [Notes and limitations](#notes-and-limitations)
+
+---
+
+## What it does
+
+The launchpad has five moving parts.
+
+**Live search links.** Every job site is shown as a card with an "Open search" link.
+The link is *not* static — it is rebuilt from your current search term and active
+location. Change the term from "SQL Server DBA" to "Data Engineer" and every link on
+the page updates instantly to point at that search. Switch your location from
+Montreal to Toronto and the city/state-aware links re-target accordingly.
+
+**Editable job types.** The search term presets ("SQL Server DBA", "Database
+Administrator", and so on) are fully editable. Add a new one, remove one you don't
+need — your set is saved to disk and reloaded next time.
+
+**Editable locations.** You can store as many locations as you like, each with a
+**country**, **state / province** and **city**. The active location drives every
+location-aware search link on the page. Add Toronto, add a US city, switch between
+them with a dropdown.
+
+**An "Active leads" tab.** Beyond generic search links, the launchpad keeps a list of
+**specific openings** worth verifying — company, role, a one-line summary, the date
+it was first seen, and a direct link to the posting. Leads found on the most recent
+refresh are flagged as "New" with a green highlight.
+
+**Per-device progress tracking.** Every card has a checkbox. Tick the sites you've
+already searched or the leads you've already reviewed; the state is remembered in
+your browser so the page picks up where you left off.
+
+---
+
+## Screenshots
+
+### On-site tab
+
+Job sites for on-site / local roles, grouped into government & aggregators, regional
+job boards, and specialist IT recruiters. The search-term box, job-type presets and
+location selector sit at the top.
+
+![On-site tab](docs/screenshot-onsite.png)
+
+### Remote tab
+
+Remote-only job boards plus government / aggregator searches with a remote filter
+applied. The "Remote" tab chip carries a green count when the latest refresh found
+new remote leads.
+
+![Remote tab](docs/screenshot-remote.png)
+
+### Active leads tab
+
+Specific openings to verify, split into on-site and remote. Each lead shows a summary,
+the date it was first seen, and a direct link. New leads from the latest refresh get a
+green "New" badge and a highlighted border.
+
+![Active leads tab](docs/screenshot-leads.png)
+
+---
+
+## Requirements
+
+- **Python 3.8 or newer** (developed and tested on Python 3.10+)
+- **Flask 3.0 or newer** — installed via the step below
+- A web browser
+
+No database, no build step, no internet connection required to *run* the app — the
+internet is only used when you click through to an actual job site.
+
+---
+
+## Installation
+
+From inside the `dba-launchpad` folder:
+
+```bash
 pip install -r requirements.txt
+```
+
+That installs Flask, the only dependency. If you prefer to keep things isolated, use
+a virtual environment first:
+
+```bash
+python -m venv .venv
+source .venv/bin/activate        # on Windows: .venv\Scripts\activate
+pip install -r requirements.txt
+```
+
+---
+
+## Running the app
+
+```bash
 python app.py
 ```
 
-Then open http://127.0.0.1:5050
+You will see:
 
-## Files
+```
+  DBA / Data Roles -- Job Search Launchpad
+  Open this in your browser:  http://127.0.0.1:5050
+```
 
-- `app.py` -- Flask backend + the launchpad page (HTML/CSS/JS)
-- `config.json` -- saved state: job types, locations, search term, leads
-- `requirements.txt` -- dependencies (Flask)
+Open **http://127.0.0.1:5050** in your browser. To stop the app, press `Ctrl+C` in
+the terminal.
+
+To run it on a different port (for example if 5050 is busy):
+
+```bash
+PORT=8080 python app.py
+```
+
+---
+
+## How to use it
+
+### 1. Set your search term
+
+The box at the top — *"What are you searching for?"* — holds the term that every
+search link is built from. Type into it and watch the "Open search" links update as
+you type. Whatever you leave in the box is saved, so it is still there next time you
+open the app.
+
+### 2. Manage your job types
+
+Under the search box is a row of **preset chips** — quick one-click search terms.
+
+- **Use a preset:** click the chip text; it drops straight into the search box.
+- **Remove a preset:** click the small `×` on the chip.
+- **Add a preset:** type into the *"Add a job type"* field and click **Add type**
+  (or press Enter).
+
+Your job-type list is saved on the server (in `config.json`), so it survives
+restarts and is shared across browsers.
+
+### 3. Set your location
+
+The second box — *"Where are you searching?"* — controls the location that
+location-aware search links target.
+
+- **Switch location:** pick a different entry from the dropdown. The page reloads and
+  every city/state-aware link re-targets to that location.
+- **Add a location:** click **Add a location**, fill in any of **Country**,
+  **State / Province** and **City** (at least one is required), and click **Add**.
+  The new location becomes active immediately.
+- **Remove a location:** select it in the dropdown and click **Remove this
+  location**. You must always keep at least one.
+
+### 4. Work the three tabs
+
+**On-site** — job sites useful for local / on-site roles, grouped into:
+
+- *Government & employer-page aggregators* — Job Bank, Eluta
+- *Regional job boards* — Jobillico, Jobboom, Workhoppers
+- *Specialist IT recruiters* — Robert Half, S.i. Systems, Akkodis, Fed IT, Procom,
+  Kovasys (many senior and contract roles go through recruiters before they are ever
+  posted publicly)
+
+**Remote** — job sites for fully-remote roles:
+
+- *Remote-only job boards* — We Work Remotely, Jobgether, Remote Rocketship, Working
+  Nomads, Built In, DailyRemote
+- *Government & aggregators* — Job Bank and Eluta with a remote filter applied
+
+**Active leads** — specific openings to verify, split into on-site and remote. Each
+lead card shows the company and role, a one-line description, the date it was first
+seen, and a **View posting** link. Always confirm a role is still open, the right
+seniority, and (for remote roles) actually open to candidates in your country before
+applying.
+
+**About the count pills.** Each job-site card carries a small pill. It shows how many
+leads in the "Active leads" tab were found via that site on the most recent refresh.
+A pill sits quietly at `0` on quiet days and turns **green** when something new lands.
+Recruiter cards show `—` ("direct") because they are not lead-counted. The tab chips
+themselves show a green *"N new"* badge when the latest refresh added new leads.
+
+### 5. Track progress with checkmarks
+
+Every card — site cards and lead cards alike — has a checkbox. Tick the ones you have
+already worked through; ticked cards dim so your eye skips them. This state is stored
+in your browser **on that device**, so it is private to you and does not sync.
+The **Clear all checkmarks** button at the bottom resets them.
+
+---
+
+## How it works
+
+The app is a single Python file, `app.py`, containing both the Flask backend and the
+launchpad page (HTML, CSS and JavaScript embedded as a template string).
+
+- **The page** renders the cards in the browser from data the server injects: the
+  site catalogue, your job types, your locations and the leads list.
+- **Search links** use placeholder templates such as
+  `https://www.eluta.ca/search?q={Q}&l={CITY_ENC}+{STATE_ENC}`. The browser
+  substitutes `{Q}` (your encoded term), `{S}` (a term slug) and the location
+  placeholders (`{CITY}`, `{CITY_ENC}`, `{CITY_SLUG}`, `{STATE}`, `{STATE_ENC}`,
+  `{STATE_SLUG}`, `{COUNTRY}`, `{COUNTRY_ENC}`) so the link always reflects the
+  current term and active location.
+- **Editing actions** (add/remove a job type, add/remove/switch a location, change
+  the term) post to small JSON API endpoints, which update `config.json` and reload
+  the page.
+- **State** lives in two places: everything editable is persisted server-side to
+  `config.json`; checkmarks are kept browser-side in `localStorage`.
+
+### API endpoints
+
+| Method & path | Purpose |
+|---|---|
+| `GET /` | The launchpad page |
+| `POST /api/job-types/add` | Add a job type — body `{"name": "..."}` |
+| `POST /api/job-types/delete` | Remove a job type — body `{"name": "..."}` |
+| `POST /api/locations/add` | Add a location — body `{"country","state","city"}` |
+| `POST /api/locations/delete` | Remove a location — body `{"id": "..."}` |
+| `POST /api/locations/active` | Switch active location — body `{"id": "..."}` |
+| `POST /api/term` | Save the current search term — body `{"term": "..."}` |
+
+---
+
+## The `config.json` file
+
+All editable state is stored in `config.json` next to `app.py`. It is created
+automatically from sensible defaults on first run. The structure:
+
+```jsonc
+{
+  "term": "SQL Server DBA",          // current search term
+  "job_types": [ "SQL Server DBA", ... ],   // preset chips
+  "locations": [
+    { "id": "loc-montreal", "country": "Canada",
+      "state": "Quebec", "city": "Montreal" }
+  ],
+  "active_location": "loc-montreal", // id of the active location
+  "last_scan": "Fri May 22, 2026",   // a lead counts as "new" when its
+                                     //   firstSeen matches this date
+  "leads": {
+    "leads-onsite": [ { "name", "src", "firstSeen", "desc", "url" }, ... ],
+    "leads-remote": [ ... ]
+  }
+}
+```
+
+You can edit `config.json` by hand while the app is stopped, or just use the in-app
+controls while it is running. If the file is ever deleted or becomes corrupt, the app
+quietly recreates it from defaults.
+
+---
+
+## Job sites included
+
+The site catalogue currently leans Canada-first, reflecting the original use case
+(Montreal on-site and remote-in-Canada roles):
+
+- **Aggregators / government:** Job Bank (Government of Canada), Eluta.ca
+- **Regional boards:** Jobillico, Jobboom, Workhoppers
+- **IT recruiters:** Robert Half Technology, S.i. Systems, Akkodis, Fed IT, Procom,
+  Kovasys
+- **Remote-only boards:** We Work Remotely, Jobgether, Remote Rocketship, Working
+  Nomads, Built In, DailyRemote
+
+If you set a location outside Canada the links still work as searches, but the
+Canada-specific boards (Job Bank, Jobillico) will be less useful. See *Extending it*
+below.
+
+---
+
+## Extending it
+
+The site catalogue is the `SITES` dictionary near the top of `app.py`. To add a job
+site, append an entry to the relevant group with a `name`, `badge` (a CSS class such
+as `b-board`), `label`, `desc` and a `tpl` URL template using the placeholders listed
+above. Recruiter-style cards that should not be lead-counted take `"noCount": True`.
+
+Common extensions you might want:
+
+- Add job boards for other countries so non-Canada locations are well served.
+- Wire automatic weekday scanning into the app so the "Active leads" tab refreshes
+  itself instead of being seeded manually.
+- Add more search-term placeholders, or a language toggle for bilingual boards.
+
+---
+
+## Troubleshooting
+
+**"Address already in use" / port 5050 busy.** Run on another port:
+`PORT=8080 python app.py`.
+
+**"Could not reach the server" alert when adding a job type or location.** The Flask
+app has stopped — restart it with `python app.py` and reload the page.
+
+**A search link opens an empty or odd result page.** Job sites change their URL
+formats over time. Update the relevant `tpl` in the `SITES` dictionary in `app.py`.
+
+**My checkmarks disappeared.** Checkmarks are stored per-browser, per-device. They do
+not move between browsers or machines, and clearing your browser data clears them.
+
+**Edited `config.json` and the app ignores it.** Edits to `config.json` are read on
+each request, but make changes while the app is *not* mid-write — easiest is to stop
+the app, edit, then start it again.
+
+---
+
+## Notes and limitations
+
+- This app **does not scrape or fetch** job postings itself. It builds search *links*
+  and keeps a manually-seeded leads list. Always open a posting to confirm it is
+  current, the right seniority, and open to candidates in your country.
+- The "Active leads" list and the `last_scan` date are seed data. They do not update
+  on their own — refreshing them is a separate task.
+- The development server (`python app.py`) is meant for **local, single-user** use.
+  Do not expose it to the public internet.
+- Checkmark state is browser-local and is not backed up.
