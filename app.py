@@ -23,6 +23,9 @@ job types, locations and checkmarks survive restarts.
 
 import json
 import os
+import signal
+import subprocess
+import time
 import uuid
 
 from flask import Flask, request, jsonify, render_template_string
@@ -1000,11 +1003,59 @@ render();
 
 
 # ---------------------------------------------------------------------------
+# PORT MANAGEMENT
+# ---------------------------------------------------------------------------
+def free_port(port):
+    """Kill any process currently listening on `port` so we can rebind it.
+
+    This makes restarting the app painless: a stale `python app.py` left
+    running in another terminal is stopped automatically instead of causing
+    an "Address already in use" error. Uses `lsof`; if that is unavailable
+    the function does nothing and any conflict is left to app.run() to report.
+    """
+    try:
+        result = subprocess.run(
+            ["lsof", "-ti", "tcp:%d" % port, "-sTCP:LISTEN"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (FileNotFoundError, subprocess.SubprocessError):
+        return  # no lsof -- skip quietly
+    pids = sorted({int(p) for p in result.stdout.split() if p.strip().isdigit()})
+    me = os.getpid()
+    killed = False
+    for pid in pids:
+        if pid == me:
+            continue
+        print("  Port %d is held by PID %d -- stopping it." % (port, pid))
+        try:
+            os.kill(pid, signal.SIGTERM)
+        except ProcessLookupError:
+            continue
+        # wait briefly for a graceful exit, then force-kill if needed
+        for _ in range(15):
+            time.sleep(0.2)
+            try:
+                os.kill(pid, 0)        # signal 0 = "are you still alive?"
+            except ProcessLookupError:
+                break
+        else:
+            try:
+                os.kill(pid, signal.SIGKILL)
+                print("  PID %d did not exit -- force-killed." % pid)
+            except ProcessLookupError:
+                pass
+        killed = True
+    if killed:
+        time.sleep(0.6)  # let the OS fully release the socket
+
+
+# ---------------------------------------------------------------------------
 # ENTRY POINT
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
     load_config()  # ensure config.json exists on disk
     port = int(os.environ.get("PORT", "5050"))
+    free_port(port)  # always reclaim the port before starting
     print("\n  DBA / Data Roles -- Job Search Launchpad")
     print("  Open this in your browser:  http://127.0.0.1:%d\n" % port)
     app.run(host="127.0.0.1", port=port, debug=False)

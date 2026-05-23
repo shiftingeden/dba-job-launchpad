@@ -160,7 +160,11 @@ You will see:
 Open **http://127.0.0.1:5050** in your browser. To stop the app, press `Ctrl+C` in
 the terminal.
 
-To run it on a different port (for example if 5050 is busy):
+You can re-run `python app.py` at any time **without** stopping the old instance
+first — on startup the app automatically reclaims its port, stopping any earlier
+instance still listening on it. No more "Address already in use" errors.
+
+To run it on a different port:
 
 ```bash
 PORT=8080 python app.py
@@ -354,7 +358,9 @@ Common extensions you might want:
 
 ## Troubleshooting
 
-**"Address already in use" / port 5050 busy.** Run on another port:
+**Port already in use.** The app reclaims its port automatically on startup — it
+stops any process still listening there before binding, so simply re-running
+`python app.py` works. If you specifically want a different port, run
 `PORT=8080 python app.py`.
 
 **"Could not reach the server" alert when adding a job type or location.** The Flask
