@@ -26,6 +26,7 @@ import os
 import signal
 import subprocess
 import time
+import unicodedata
 import uuid
 
 import requests
@@ -478,26 +479,52 @@ def _workday_post(api, headers, query, offset, applied):
     return resp.json()
 
 
-def _find_country_facet(facets, country):
-    """Find the Workday location facet value for `country`.
+def _norm(text):
+    """Lowercase and strip accents, so 'Montreal' matches 'Montreal'."""
+    text = unicodedata.normalize("NFKD", text or "")
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    return text.lower().strip()
+
+
+def _match_location(facets, location):
+    """Build Workday `appliedFacets` for the active location.
 
     Workday filters by opaque facet ids, not place names, so we read the facet
-    list from a probe response and match the wanted country by its descriptor.
-    Returns (facetParameter, value_id, descriptor) or (None, None, None).
+    list from a probe response and match the wanted country, province and city
+    by descriptor (accent-insensitively). A country facet plus the most specific
+    place facet (city, else province) are applied together.
+
+    Returns (appliedFacets dict, [descriptors applied, broad -> specific]).
     """
-    want = (country or "").strip().lower()
-    if not want:
-        return None, None, None
+    country = _norm((location or {}).get("country"))
+    state = _norm((location or {}).get("state"))
+    city = _norm((location or {}).get("city"))
+    applied = {}
+    used = []
     for facet in facets or []:
         fp = facet.get("facetParameter") or ""
-        if "countr" not in fp.lower() and "location" not in fp.lower():
-            continue
-        for val in facet.get("values", []):
-            desc = val.get("descriptor") or ""
-            d = desc.lower()
-            if val.get("id") and (d == want or want in d or d in want):
-                return fp, val["id"], desc
-    return None, None, None
+        fpl = fp.lower()
+        values = facet.get("values") or []
+        if "countr" in fpl and country:
+            for val in values:
+                d = _norm(val.get("descriptor"))
+                if val.get("id") and (d == country or country in d or d in country):
+                    applied[fp] = [val["id"]]
+                    used.append(val.get("descriptor") or country)
+                    break
+        elif ("location" in fpl or "region" in fpl or "city" in fpl) \
+                and (city or state):
+            for needle in (city, state):       # prefer a city match over province
+                if not needle:
+                    continue
+                hit = next((v for v in values
+                            if v.get("id")
+                            and needle in _norm(v.get("descriptor"))), None)
+                if hit:
+                    applied[fp] = [hit["id"]]
+                    used.append(hit.get("descriptor") or needle)
+                    break
+    return applied, used
 
 
 def _workday_search(api, headers, query, applied):
@@ -540,12 +567,11 @@ def scan_workday_all(wd, job_types, location):
     location_used = None
     try:
         # probe with an empty query to read the full facet list, then pick the
-        # facet id that constrains results to the active country
+        # facet ids that constrain results to the active location
         probe = _workday_post(api, headers, "", 0, {})
-        fparam, fid, fdesc = _find_country_facet(probe.get("facets", []), country)
-        if fparam and fid:
-            applied = {fparam: [fid]}
-            location_used = fdesc
+        applied, used = _match_location(probe.get("facets", []), location)
+        if used:
+            location_used = used[-1]            # most specific place applied
         for jt in job_types:
             postings = _workday_search(api, headers, jt, applied)
             breakdown[jt] = len(postings)

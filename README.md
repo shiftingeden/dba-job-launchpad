@@ -276,11 +276,13 @@ count comes out right. Add or remove job types (step 2) to tune what the scan lo
 for; hover a result chip to see the per-job-type breakdown.
 
 **It respects your active location.** The scan constrains each bank's results to
-your active location's **country** (set in step 3), using the careers site's own
-country filter — so a Montreal-based search counts Canadian postings and ignores,
-say, a role in Chicago. The result chip shows the country it filtered to (e.g.
-*12 in Canada*); if a bank doesn't expose a usable country filter, the chip says
-*matching* instead and the tooltip notes that the count spans all locations.
+your active location — **country, province and city** (set in step 3) — using the
+careers site's own location filters. So a Montréal search counts Montréal / Québec
+postings and ignores roles in Toronto or Chicago. Matching is accent-insensitive
+("Montreal" finds "Montréal"). The result chip shows the most specific place it
+filtered to (e.g. *13 in Montréal, Québec*); if a bank doesn't expose a usable
+location facet, the chip says *matching* and the tooltip notes the count spans all
+locations.
 
 **Why only the banks.** TD, BMO and CIBC run on Workday, which exposes a JSON jobs
 API that returns each posting's title and posted date — fast, reliable, no setup.
