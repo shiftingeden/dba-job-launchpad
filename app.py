@@ -23,11 +23,13 @@ job types, locations and checkmarks survive restarts.
 
 import json
 import os
+import re
 import signal
 import subprocess
 import time
 import uuid
 
+import requests
 from flask import Flask, request, jsonify, render_template_string
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
@@ -175,8 +177,10 @@ SITES = {
         {
             "name": "TD -- Toronto-Dominion Bank", "badge": "b-bank", "label": "Bank",
             "desc": "Major data and technology employer; searches TD's careers portal.",
-            "tpl": "https://jobs.td.com/en/job-search-results/?keywords={Q}",
+            "tpl": "https://td.wd3.myworkdayjobs.com/en-US/TD_Bank_Careers?q={Q}",
             "noCount": True,
+            "workday": {"host": "td.wd3.myworkdayjobs.com",
+                        "tenant": "td", "site": "TD_Bank_Careers"},
         },
         {
             "name": "Scotiabank -- Bank of Nova Scotia", "badge": "b-bank", "label": "Bank",
@@ -187,14 +191,18 @@ SITES = {
         {
             "name": "BMO -- Bank of Montreal", "badge": "b-bank", "label": "Bank",
             "desc": "Digital-first bank investing in data and AI; searches BMO's Canadian careers site.",
-            "tpl": "https://jobs.bmo.com/ca/en/search-results?keywords={Q}",
+            "tpl": "https://bmo.wd3.myworkdayjobs.com/en-US/External?q={Q}",
             "noCount": True,
+            "workday": {"host": "bmo.wd3.myworkdayjobs.com",
+                        "tenant": "bmo", "site": "External"},
         },
         {
             "name": "CIBC -- Canadian Imperial Bank of Commerce", "badge": "b-bank", "label": "Bank",
             "desc": "Searches CIBC's Workday careers portal across all divisions.",
             "tpl": "https://cibc.wd3.myworkdayjobs.com/search?q={Q}",
             "noCount": True,
+            "workday": {"host": "cibc.wd3.myworkdayjobs.com",
+                        "tenant": "cibc", "site": "search"},
         },
         {
             "name": "National Bank of Canada", "badge": "b-bank", "label": "Bank",
@@ -419,6 +427,148 @@ def set_term():
 
 
 # ---------------------------------------------------------------------------
+# ROUTES -- LIVE SCAN
+# ---------------------------------------------------------------------------
+# The scan asks each job site how many matching roles were posted recently
+# ("new" = posted today or yesterday). Two methods are used:
+#
+#   workday  -- Banks whose careers run on Workday (TD, BMO, CIBC) expose a
+#               JSON API that returns each posting's title and a "postedOn"
+#               string ("Posted Today", "Posted Yesterday", ...). Fast and
+#               reliable -- no browser needed.
+#
+#   browser  -- Every other site is a JavaScript app: a plain fetch sees no
+#               jobs at all. A headless browser (Playwright) renders the search
+#               page and we read the posted-date phrases from the result text.
+#               This needs a one-time setup on the machine running the app:
+#                   pip install playwright
+#                   playwright install chromium
+#
+# NOTE: this code could not be tested against live job sites in the build
+# environment (its network blocks those domains). Verify behaviour locally.
+USER_AGENT = ("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) "
+              "AppleWebKit/537.36 (KHTML, like Gecko) "
+              "Chrome/124.0.0.0 Safari/537.36")
+
+# phrases on a rendered page that mean "posted within roughly the last day"
+_FRESH_RE = re.compile(
+    r"posted\s+(?:today|yesterday)|just\s+posted|\b1\s+day\s+ago"
+    r"|\b\d{1,2}\s+hours?\s+ago|\baujourd'?hui\b|\bhier\b"
+    r"|il\s+y\s+a\s+\d{1,2}\s+heures?",
+    re.IGNORECASE,
+)
+# best-effort "N jobs / results" total on a rendered page
+_COUNT_RE = re.compile(
+    r"([\d][\d,  ]{0,9}\d|\d)\s*\+?\s*"
+    r"(?:jobs?|results?|postings?|openings?|emplois?|offres?)\b",
+    re.IGNORECASE,
+)
+
+
+def _is_fresh(posted_on):
+    """True when a Workday `postedOn` string means today or yesterday."""
+    p = (posted_on or "").lower()
+    return "today" in p or "yesterday" in p
+
+
+def scan_workday(wd, term):
+    """Query a Workday careers JSON API; count roles posted today/yesterday."""
+    api = "https://%s/wday/cxs/%s/%s/jobs" % (wd["host"], wd["tenant"], wd["site"])
+    headers = {
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json",
+        "Content-Type": "application/json",
+        "Referer": "https://%s/" % wd["host"],
+    }
+    fresh = total = scanned = 0
+    offset = 0
+    try:
+        while offset < 200:                       # bound work: first 200 hits
+            payload = json.dumps({"appliedFacets": {}, "limit": 20,
+                                  "offset": offset, "searchText": term})
+            resp = requests.post(api, data=payload, headers=headers, timeout=15)
+            if resp.status_code in (401, 403, 429):
+                return {"ok": False, "state": "blocked", "method": "workday",
+                        "status": resp.status_code}
+            if resp.status_code != 200:
+                return {"ok": False, "state": "error", "method": "workday",
+                        "detail": "HTTP %d" % resp.status_code}
+            data = resp.json()
+            total = data.get("total", total)
+            postings = data.get("jobPostings") or []
+            if not postings:
+                break
+            for post in postings:
+                scanned += 1
+                if _is_fresh(post.get("postedOn")):
+                    fresh += 1
+            offset += 20
+            if offset >= total:
+                break
+    except requests.RequestException as exc:
+        return {"ok": False, "state": "error", "method": "workday",
+                "detail": str(exc)[:110]}
+    except ValueError:
+        return {"ok": False, "state": "error", "method": "workday",
+                "detail": "site did not return valid JSON"}
+    return {"ok": True, "state": "ok", "method": "workday",
+            "fresh": fresh, "total": total, "scanned": scanned}
+
+
+def scan_browser(url):
+    """Render a search page in a headless browser; count fresh postings."""
+    try:
+        from playwright.sync_api import sync_playwright
+    except ImportError:
+        return {"ok": False, "state": "setup", "method": "browser",
+                "detail": "Browser scan needs Playwright. Run once: "
+                          "pip install playwright && playwright install chromium"}
+    try:
+        with sync_playwright() as pw:
+            browser = pw.chromium.launch(headless=True)
+            try:
+                page = browser.new_page(user_agent=USER_AGENT)
+                page.goto(url, timeout=30000, wait_until="domcontentloaded")
+                page.wait_for_timeout(4000)       # let job results render in
+                text = page.inner_text("body")
+            finally:
+                browser.close()
+    except Exception as exc:                      # noqa: BLE001
+        msg = str(exc)
+        if "Executable doesn't exist" in msg or "playwright install" in msg:
+            return {"ok": False, "state": "setup", "method": "browser",
+                    "detail": "Chromium not installed. Run: playwright install chromium"}
+        return {"ok": False, "state": "error", "method": "browser",
+                "detail": msg[:110]}
+    total = None
+    m = _COUNT_RE.search(text)
+    if m:
+        digits = re.sub(r"[^\d]", "", m.group(1))
+        if digits and int(digits) < 1_000_000:
+            total = int(digits)
+    return {"ok": True, "state": "ok", "method": "browser",
+            "fresh": len(_FRESH_RE.findall(text)), "total": total}
+
+
+@app.route("/api/scan", methods=["POST"])
+def api_scan():
+    data = request.get_json(silent=True) or {}
+    site_id = data.get("site_id") or ""
+    term = (data.get("term") or "").strip()
+    url = (data.get("url") or "").strip()
+    section, _, idx = site_id.rpartition("-")
+    sites = SITES.get(section, [])
+    if not (idx.isdigit() and int(idx) < len(sites)):
+        return jsonify(ok=False, state="error", detail="Unknown site."), 400
+    site = sites[int(idx)]
+    if site.get("workday"):
+        return jsonify(**scan_workday(site["workday"], term or "data"))
+    if url.startswith("http"):
+        return jsonify(**scan_browser(url))
+    return jsonify(ok=False, state="error", detail="No scan URL."), 400
+
+
+# ---------------------------------------------------------------------------
 # HTML TEMPLATE  (visuals ported verbatim from the original launchpad artifact)
 # ---------------------------------------------------------------------------
 TEMPLATE = r"""<!DOCTYPE html>
@@ -528,11 +678,39 @@ TEMPLATE = r"""<!DOCTYPE html>
   }
   .tab.active .cnt.hasnew { color: #fff; }
   .refresh-btn {
-    margin-left: auto; border: 1px solid #1a5c9c; background: #fff; color: #1a5c9c;
-    padding: 7px 15px; border-radius: 999px; font-size: 13px; font-weight: 600;
+    margin-left: auto; border: 1px solid #1a5c9c; background: #1a5c9c; color: #fff;
+    padding: 7px 16px; border-radius: 999px; font-size: 13px; font-weight: 600;
     cursor: pointer; transition: all .12s;
   }
-  .refresh-btn:hover { background: #1a5c9c; color: #fff; }
+  .refresh-btn:hover { background: #15497d; border-color: #15497d; }
+  .refresh-btn:disabled { background: #9aa7b4; border-color: #9aa7b4; cursor: default; }
+
+  /* scan progress bar */
+  .scanbar {
+    display: none; background: #fff; border: 1px solid #e3e6e9; border-radius: 10px;
+    padding: 11px 14px; margin-bottom: 16px;
+  }
+  .scantrack {
+    height: 8px; background: #eef0f2; border-radius: 999px; overflow: hidden;
+    margin-bottom: 8px;
+  }
+  .scanfill {
+    height: 100%; width: 0%; background: #2e9e5b; border-radius: 999px;
+    transition: width .3s ease;
+  }
+  .scanlabel { font-size: 12px; color: #3c4248; font-weight: 500; }
+
+  /* per-card scan result chip */
+  .scanres {
+    display: none; font-size: 10.5px; font-weight: 700; padding: 2px 8px;
+    border-radius: 999px; margin-left: 8px; vertical-align: middle;
+  }
+  .scanres.s-new   { background: #2e9e5b; color: #fff; }
+  .scanres.s-ok    { background: #eef0f2; color: #6b7178; }
+  .scanres.s-block { background: #fdebd0; color: #9a6212; }
+  .scanres.s-setup { background: #e3effa; color: #1a5c9c; }
+  .scanres.s-err   { background: #fbe4e4; color: #b4332e; }
+  .scanres.s-scan  { background: #eef0f2; color: #9aa0a8; }
 
   .panel { display: none; }
   .panel.active { display: block; }
@@ -671,7 +849,12 @@ TEMPLATE = r"""<!DOCTYPE html>
     <button class="tab" data-panel="remote">Remote <span class="cnt" id="c-remote"></span></button>
     <button class="tab" data-panel="banks">Big Six banks</button>
     <button class="tab" data-panel="leads">Active leads <span class="cnt" id="c-leads"></span></button>
-    <button class="refresh-btn" id="rerun" title="Reload the page and rebuild every search link">&#8635; Re-run</button>
+    <button class="refresh-btn" id="scanBtn" title="Scan every job site for roles posted in the last ~24 hours">&#10227; Scan now</button>
+  </div>
+
+  <div class="scanbar" id="scanbar">
+    <div class="scantrack"><div class="scanfill" id="scanfill"></div></div>
+    <div class="scanlabel" id="scanlabel"></div>
   </div>
 
   <div class="panel active" id="onsite">
@@ -717,7 +900,7 @@ TEMPLATE = r"""<!DOCTYPE html>
       <li><strong>Language note:</strong> regional boards like Jobboom and Jobillico are French-first. Also search &ldquo;administrateur de base de donn&eacute;es&rdquo; to catch French-only postings.</li>
       <li><strong>Recruiters are the hidden market:</strong> senior and contract roles often go through Robert Half, Procom, S.i. Systems, Akkodis and Fed IT before (or instead of) public boards.</li>
       <li><strong>Go direct:</strong> big employers post on their own career sites first &mdash; the <strong>Big Six banks</strong> tab links straight into RBC, TD, Scotiabank, BMO, CIBC and National Bank.</li>
-      <li><strong>Re-run anytime:</strong> the <strong>&#8635; Re-run</strong> button reloads the page and rebuilds every search link from your latest saved job types and location.</li>
+      <li><strong>Scan for new roles:</strong> the <strong>&#10227; Scan now</strong> button checks every job site for roles matching your search term posted in the last ~24 hours, and shows the count on each card. Banks on Workday (TD, BMO, CIBC) scan via their job API; other sites use a headless browser that needs a one-time setup (<code>pip install playwright &amp;&amp; playwright install chromium</code>).</li>
     </ul>
     <button class="reset" id="reset">Clear all checkmarks</button>
   </footer>
@@ -790,6 +973,7 @@ function pill(id, noCount) {
 function siteCard(item, id) {
   const card = document.createElement("div");
   card.className = "card" + (checks[id] ? " done" : "");
+  card.dataset.siteId = id;
   const cb = document.createElement("input");
   cb.type = "checkbox"; cb.className = "chk"; cb.checked = !!checks[id];
   cb.addEventListener("change", () => {
@@ -801,7 +985,8 @@ function siteCard(item, id) {
   body.innerHTML =
     '<div class="row1"><span class="name"></span><span class="badge ' + item.badge + '"></span></div>'
     + '<div class="desc"></div>'
-    + '<div class="actions"><a class="open" target="_blank" rel="noopener">Open search &#8599;</a></div>';
+    + '<div class="actions"><a class="open" target="_blank" rel="noopener">Open search &#8599;</a>'
+    + '<span class="scanres"></span></div>';
   body.querySelector(".name").textContent = item.name;
   body.querySelector(".badge").textContent = item.label;
   body.querySelector(".desc").textContent = item.desc;
@@ -990,8 +1175,108 @@ document.querySelectorAll(".tab").forEach(tab => {
 
 document.getElementById("reset").addEventListener("click", () => { checks = {}; save(); render(); });
 
-/* ---- re-run: reload the page, re-pull config, rebuild every search link ---- */
-document.getElementById("rerun").addEventListener("click", () => { location.reload(); });
+/* ---- live scan: ask every job site how many roles were posted in ~24h ---- */
+const scanBtn   = document.getElementById("scanBtn");
+const scanbar   = document.getElementById("scanbar");
+const scanfill  = document.getElementById("scanfill");
+const scanlabel = document.getElementById("scanlabel");
+let scanning = false;
+
+async function scanSite(siteId, url) {
+  try {
+    const r = await fetch("/api/scan", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ site_id: siteId, term: term, url: url })
+    });
+    return await r.json();
+  } catch (e) {
+    return { ok: false, state: "error", detail: "Could not reach the server." };
+  }
+}
+
+function showScanres(el, res) {
+  el.style.display = "inline-block";
+  let cls = "scanres", txt = "";
+  if (res.state === "ok") {
+    const total = (res.total != null) ? res.total.toLocaleString() : "?";
+    if (res.fresh > 0) {
+      cls += " s-new";
+      txt = res.fresh + " new ≤ 24h · " + total + " total";
+    } else {
+      cls += " s-ok";
+      txt = "0 new · " + total + " total";
+    }
+  } else if (res.state === "blocked") {
+    cls += " s-block"; txt = "site blocked the scan";
+  } else if (res.state === "setup") {
+    cls += " s-setup"; txt = "browser scan: setup needed";
+  } else {
+    cls += " s-err"; txt = "unreachable";
+  }
+  el.className = cls;
+  el.textContent = txt;
+  el.title = res.detail || txt;
+}
+
+async function runScan() {
+  if (scanning) return;
+  scanning = true;
+  scanBtn.disabled = true;
+  scanBtn.textContent = "Scanning…";
+
+  const cards = [...document.querySelectorAll(".card[data-site-id]")];
+  const total = cards.length;
+  let done = 0, totFresh = 0, setup = 0, blocked = 0, errors = 0;
+
+  scanbar.style.display = "block";
+  scanfill.style.width = "0%";
+  scanlabel.textContent = "Starting scan of " + total + " job sites…";
+  cards.forEach(c => {
+    const s = c.querySelector(".scanres");
+    if (s) { s.className = "scanres s-scan"; s.style.display = "inline-block";
+             s.textContent = "queued…"; }
+  });
+
+  const queue = cards.slice();
+  async function worker() {
+    while (queue.length) {
+      const card = queue.shift();
+      const a = card.querySelector("a.open");
+      const res = await scanSite(card.dataset.siteId, a ? a.href : "");
+      const sr = card.querySelector(".scanres");
+      if (sr) showScanres(sr, res);
+      if (res.state === "ok") totFresh += (res.fresh || 0);
+      else if (res.state === "setup") setup++;
+      else if (res.state === "blocked") blocked++;
+      else errors++;
+      done++;
+      scanfill.style.width = (done / total * 100).toFixed(1) + "%";
+      scanlabel.textContent = "Scanning… " + done + " / " + total
+        + " sites  ·  " + totFresh + " new role" + (totFresh === 1 ? "" : "s")
+        + " found so far";
+    }
+  }
+  const workers = [];
+  for (let i = 0; i < 3; i++) workers.push(worker());
+  await Promise.all(workers);
+
+  scanfill.style.width = "100%";
+  let summary = "Scan complete — " + totFresh + " new role"
+    + (totFresh === 1 ? "" : "s") + " posted in the last ~24h, across "
+    + total + " job sites.";
+  const notes = [];
+  if (setup)   notes.push(setup + " need browser setup");
+  if (blocked) notes.push(blocked + " blocked the scan");
+  if (errors)  notes.push(errors + " unreachable");
+  if (notes.length) summary += "  (" + notes.join(", ") + ")";
+  scanlabel.textContent = summary;
+
+  scanBtn.disabled = false;
+  scanBtn.textContent = "⟳ Scan now";
+  scanning = false;
+}
+scanBtn.addEventListener("click", runScan);
 
 /* ---- go ---- */
 renderPresets();
@@ -1058,4 +1343,4 @@ if __name__ == "__main__":
     free_port(port)  # always reclaim the port before starting
     print("\n  DBA / Data Roles -- Job Search Launchpad")
     print("  Open this in your browser:  http://127.0.0.1:%d\n" % port)
-    app.run(host="127.0.0.1", port=port, debug=False)
+    app.run(host="127.0.0.1", port=port, debug=False, threaded=True)
